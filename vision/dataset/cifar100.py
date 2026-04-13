@@ -1,0 +1,87 @@
+import os
+import torch
+import torchvision.datasets as datasets
+from torchvision.datasets import CIFAR100
+
+ROOT = "data"
+class CIFAR100Dataset:
+    def __init__(self,
+                 is_train,
+                 preprocess,
+                 location=ROOT,
+                 batch_size=128,
+                 num_workers=16):
+
+        if is_train:
+            self.train_dataset = CIFAR100(
+                root=location,
+                train=True,
+                download=True,
+                transform=preprocess
+            )
+            self.train_loader = torch.utils.data.DataLoader(
+                self.train_dataset,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=num_workers
+            )
+        else:
+            self.test_dataset = CIFAR100(
+                root=location,
+                train=False,
+                download=True,
+                transform=preprocess
+            )
+            self.test_loader = torch.utils.data.DataLoader(
+                self.test_dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=num_workers
+            )
+
+        self.classnames = self.train_dataset.classes if is_train else self.test_dataset.classes
+
+
+def prepare_train_loaders(config):
+    dataset_class = CIFAR100Dataset(
+        is_train=True,
+        preprocess=config['train_preprocess'],
+        location=ROOT,
+        batch_size=config['batch_size'],
+        num_workers=config['num_workers'],
+    )
+    return {'full': dataset_class.train_loader}
+
+def prepare_test_loaders(config):
+    dataset_class = CIFAR100Dataset(
+        is_train=False,
+        preprocess=config['eval_preprocess'],
+        location=ROOT,
+        batch_size=config['batch_size'],
+        num_workers=config['num_workers'],
+    )
+
+    loaders = {'test': dataset_class.test_loader}
+
+    if config.get('val_fraction', 0) > 0.:
+        test_set = loaders['test'].dataset
+        shuffled_idxs = torch.load(config['shuffled_idxs'], weights_only=False)
+        num_valid = int(len(test_set) * config['val_fraction'])
+        valid_idxs, test_idxs = shuffled_idxs[:num_valid], shuffled_idxs[num_valid:]
+
+        loaders['val'] = torch.utils.data.DataLoader(
+            torch.utils.data.Subset(test_set, valid_idxs),
+            batch_size=config['batch_size'],
+            shuffle=False,
+            num_workers=config['num_workers']
+        )
+        loaders['test'] = torch.utils.data.DataLoader(
+            torch.utils.data.Subset(test_set, test_idxs),
+            batch_size=config['batch_size'],
+            shuffle=False,
+            num_workers=config['num_workers']
+        )
+
+    loaders['class_names'] = dataset_class.classnames
+    return loaders
+
